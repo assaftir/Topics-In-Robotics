@@ -1,0 +1,4 @@
+uint32 original_height
+uint32 original_width
+sensor_msgs/Image image
+

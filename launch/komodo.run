@@ -1,0 +1,1 @@
+roslaunch robotican_komodo komodo.launch front_camera:=true lidar:=true asus_camera:=true gazebo:=true

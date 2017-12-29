@@ -1,0 +1,1 @@
+roslaunch robotican_armadillo armadillo.launch world_name:=/home/assaf/catkin_ws/worlds/assg2.world
