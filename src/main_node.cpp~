@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
                 break;
             case 4:
                 cout << "Looking for the red object" << endl;
-                cout << "Distance: " << turnOdom(1, 2 * M_PI, n, true) << endl;
+                cout << "Distance: " << turnOdom(1, 2 * M_PI - 0.1, n, true) << endl;
                 break;
 	    case 5:
                 cout << "Moving with actionlib: " << move_one(argc, argv) << endl;
@@ -145,7 +145,7 @@ float turnOdom(int clockwise, double radians, ros::NodeHandle n, bool searching_
     //the axis we want to be rotating by
     tf::Vector3 desired_turn_axis(0, 0, 1);
     if (!clockwise) desired_turn_axis = -desired_turn_axis;
-    ros::Rate rate(10.0);
+    //ros::Rate rate(10.0);
     bool done = false;
     double angle_turned = 0;
     while (!done && n.ok()) {
@@ -155,7 +155,7 @@ float turnOdom(int clockwise, double radians, ros::NodeHandle n, bool searching_
         cout << "tunred: " << angle_turned << endl;
         cout << "factor: " << turn_speed_factor(angle_turned, radians) << endl;
         cmd_vel_pub_.publish(base_cmd);
-        rate.sleep();
+       // rate.sleep();
         //get the current transform
         try {
             listener_.lookupTransform("base_footprint", "odom", ros::Time(0), current_transform);
@@ -282,7 +282,7 @@ if ((msg->width * msg->height) == 0) {
 	 cv::HoughCircles(red_image, circles, CV_HOUGH_GRADIENT, 1, red_image.rows/8, 200, 20, 0, 0);
 	 cv::namedWindow("Detected", cv::WINDOW_AUTOSIZE);
     	 cv::imshow("Detected", red_image);
-	 cv::waitKey(50);
+	 cv::waitKey(60);
 
         bool found_red_object = false;
 
@@ -354,7 +354,8 @@ bool check_for_obstacles(ros::NodeHandle n, float dist) {
 
 
 float turn_speed_factor(float passed, float radians){
-    return ((0.8*(radians - passed)) / radians) + 0.1;
+    if(radians - passed > M_PI/4) return 1;
+    return ((0.8*(radians - passed)) / radians) + 0.2;
 }
 
 void publish_move_command(ros::Publisher move_pub, float x, float z) {
