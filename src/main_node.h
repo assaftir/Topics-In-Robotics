@@ -25,6 +25,11 @@
 #include <std_msgs/Float32MultiArray.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_datatypes.h>
+#include "opencv2/imgproc/imgproc.hpp"
+#include <stdio.h>
+#include <stdlib.h>
+
+using namespace cv;
 
 #define degreesToRadians(degrees) (degrees * M_PI / 180.0)
 
@@ -60,8 +65,7 @@ public:
 };
 
 bool driveOdom(double distance, ros::NodeHandle n, int forward);
-bool move_one(int argc, char **argv);
-bool pixel_is_red(int r, int g, int b);
+bool move_to_elevator(int argc, char **argv);
 float min_laser_dist(ros::NodeHandle n);
 void print_options_list();
 bool check_for_obstacles(ros::NodeHandle n, float dist);
@@ -75,5 +79,7 @@ void get_mat_from_pcl(cv::Mat& image, pcl::PointCloud<pcl::PointXYZRGB>::Ptr clo
 void pixelTo3DPoint(const sensor_msgs::PointCloud2 pCloud, const int u, const int v, geometry_msgs::Point &p);
 float turnOdom(int clockwise, double radians, ros::NodeHandle n, bool searching_red_object);
 float getDistance(float x, float y, float z);
+float get_button_distance(ros::NodeHandle n);
+void thresh_callback(int, void*);
 
 #endif	// MAIN_NODE_H

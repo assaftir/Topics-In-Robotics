@@ -25,13 +25,13 @@ add_dependencies(main_node ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED
 target_link_libraries(main_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES})
 
 # add the second node
-add_executable(navigation_node src/navigation_goal.cpp)
-add_dependencies(navigation_node ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-target_link_libraries(navigation_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES})
+add_executable(main_node src/main_node.cpp)
+add_dependencies(main_node ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+target_link_libraries(main_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES})
 
 
 # Mark executables and/or libraries for installation
-install(TARGETS main_node navigation_node 
+install(TARGETS main_node 
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -4,6 +4,11 @@
 char* cmdvel_topic = "/mobile_base_controller/cmd_vel";
 char* odom_topic = "/mobile_base_controller/odom";
 
+Mat src; Mat src_gray;
+int thresh = 100;
+int max_thresh = 255;
+RNG rng(12345);
+
 int main(int argc, char **argv) {
     ros::init(argc, argv, "main_node");
     ros::NodeHandle n;
@@ -47,7 +52,17 @@ int main(int argc, char **argv) {
                 cout << "Distance: " << turnOdom(1, 2 * M_PI - 0.1, n, true) << endl;
                 break;
 	    case 5:
-                cout << "Moving with actionlib: " << move_one(argc, argv) << endl;
+                float button_dist;
+                cout << "Driving to the elevator: " << endl;
+                if (move_to_elevator(argc, argv)){
+                    while((button_dist = get_button_distance(n)) <= 0){
+                        ROS_INFO("Searching for the button");
+                    }
+                    cout << "The button is " << button_dist << " meters away" << endl;
+                }else{
+                    cout << "Can't drive to the elevator for some reason" << endl;
+                }
+               
                 break;
             case 6:
                 cout << "Min distance: " << min_laser_dist(n) << endl;
@@ -248,70 +263,43 @@ void OdomCallbackWrapper::odomCallback(const nav_msgs::OdometryConstPtr& msg) {
 
 void PointCloudCallbackWrapper::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
     //Convert between sensor_msgs/PointCloud2 to PointXYZRGB vector
-   // ros::Rate r(10000);
-if ((msg->width * msg->height) == 0) {
-      cout << "Failed: cloud not dense" <<endl;
-      return; //return if the cloud is not dense!
-}
+    if ((msg->width * msg->height) == 0) {
+        cout << "Failed: cloud not dense" <<endl;
+        return; //return if the cloud is not dense!
+    }
     sensor_msgs::Image image_;
-    try{
-      pcl::toROSMsg (*msg, image_); //convert the cloud
+    try {
+        pcl::toROSMsg(*msg, image_); //convert the cloud
+    }    catch (std::runtime_error e) {
+        ROS_ERROR_STREAM("Error in converting cloud to image message: " << e.what());
     }
-    catch (std::runtime_error e){
-      ROS_ERROR_STREAM("Error in converting cloud to image message: " << e.what());
-    }
-    cv::Mat bgr_image = cv_bridge::toCvCopy(image_, "bgr8")->image;  
-	//Without the median blur, we get an unwanted circle
-	cv::medianBlur(bgr_image, bgr_image, 3);
-	cv::Mat original_image = bgr_image.clone();
-	//Convert the bgr image to HSV encoding
-	cv::Mat hsv_image;
-	cv::cvtColor(bgr_image, hsv_image, cv::COLOR_BGR2HSV);  
-	//Filter the image, take only the desired red hue ranges
-	cv::Mat lower_range;
-	cv::Mat upper_range;
-	cv::inRange(hsv_image, cv::Scalar(0, 100, 100), cv::Scalar(10, 255, 255), lower_range);
-        cv::inRange(hsv_image, cv::Scalar(160, 100, 100), cv::Scalar(180, 255, 255), upper_range);
-	//Combine both red ranges to one image and blur it
-	cv::Mat red_image = lower_range + upper_range;
-	cv::GaussianBlur(red_image, red_image, cv::Size(9, 9), 2, 2);
-	std::vector<cv::Vec3f> circles;
-	/*Apply Circle Hough Transformation, returns a vector of circles.
-	 Each circle is a vector of the form {x, y, radius}.*/
-	 
-	 cv::HoughCircles(red_image, circles, CV_HOUGH_GRADIENT, 1, red_image.rows/8, 200, 20, 0, 0);
-	 cv::namedWindow("Detected", cv::WINDOW_AUTOSIZE);
-    	 cv::imshow("Detected", red_image);
-	 cv::waitKey(60);
+    cv::Mat bgr_image = cv_bridge::toCvCopy(image_, "bgr8")->image;
+    //Without the median blur, we have some false positives
+    cv::medianBlur(bgr_image, bgr_image, 3);
+    cv::Mat original_image = bgr_image.clone();
+    //Convert the bgr image to HSV encoding
+    cv::Mat hsv_image;
+    cv::cvtColor(bgr_image, hsv_image, cv::COLOR_BGR2HSV);
+    //Filter the image, take only the desired red hue ranges
+    cv::Mat lower_range;
+    cv::Mat upper_range;
+    cv::inRange(hsv_image, cv::Scalar(0, 100, 100), cv::Scalar(10, 255, 255), lower_range);
+    cv::inRange(hsv_image, cv::Scalar(160, 100, 100), cv::Scalar(180, 255, 255), upper_range);
+    //Combine both red ranges to one image and blur it
+    cv::Mat gray_image = lower_range + upper_range;
+    cv::GaussianBlur(gray_image, gray_image, cv::Size(9, 9), 2, 2);
+    src_gray = gray_image;
+    //
 
-        bool found_red_object = false;
+    cv::namedWindow("Src:", cv::WINDOW_AUTOSIZE);
+    cv::imshow("Src:", gray_image);
+    createTrackbar(" Canny thresh:", "Source", &thresh, max_thresh, thresh_callback);
+    thresh_callback(0, 0);
+    cv::waitKey(60);
 
-	if(circles.size() == 0){
-	    cout << "I couldn't find the red apple :(" << endl;
-	} else {
-
-		std_msgs::Float32MultiArray apple_coordinates;
-		for(size_t i = 0 ; i < 3 ; i++){
-		    apple_coordinates.data.push_back(round(circles[0][i]));
-		}
-		geometry_msgs::Point p;
-		pixelTo3DPoint(*msg, apple_coordinates.data[0], apple_coordinates.data[1], p);
-
-		//Publish the coordinates : {x, y, radius}
-		cout << "coordiantes: " << "x: " << apple_coordinates.data[0] << "y: " << apple_coordinates.data[1] << "radius: " << apple_coordinates.data[2] << endl;
-		cout << "distance: " << p.z << endl;
-
-	    
-
-	    if (p.z > 0) {
-		this->red_object_distance = p.z;
-		found_red_object = true;
-	    }
-	  
-	}
-        if (!found_red_object)
-		this->red_object_distance = 0;
-	this->running = false;
+    //
+    this->red_object_distance = 2.0;
+    this->running = false;
 }
 
 void get_mat_from_pcl(cv::Mat& image, pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud){
@@ -332,10 +320,6 @@ void print_options_list() {
     cout << "(4) Find red object turns around while searching for a red object. It stops after it finds a red object and returns its distance. If there is no red object, it stops after doing a full circle. " << endl;
 }
 
-bool pixel_is_red(int r, int g, int b){
-    return g < 80 && b < 80 && r > 120;
-}
-
 /*Check for obstacles within @dist meters,
 The answer will be stored in lsaerCb object by the laser callback function*/
 bool check_for_obstacles(ros::NodeHandle n, float dist) {
@@ -351,7 +335,6 @@ bool check_for_obstacles(ros::NodeHandle n, float dist) {
     }
     return laserCb.obstacles_in_dist;
 }
-
 
 float turn_speed_factor(float passed, float radians){
     if(radians - passed > M_PI/4) return 1;
@@ -410,6 +393,8 @@ void pixelTo3DPoint(const sensor_msgs::PointCloud2 pCloud, const int u, const in
 
     }
 
+float get_button_distance(ros::NodeHandle n){ return 1.0; }
+
 //Turn around alpha degrees clockwise, Listen to the odometry topic to reach the desired angle.
 //Speed will be reduced as we approach the goal
 void turn_around_alpha(float alpha, ros::NodeHandle n) {
@@ -456,26 +441,25 @@ void turn_around_alpha(float alpha, ros::NodeHandle n) {
 }
 
 //Move using the navigation stack
-bool move_one(int argc, char **argv){
+bool move_to_elevator(int argc, char **argv){
 
-  ros::init(argc, argv, "send_goals_node");
-
+  //ros::init(argc, argv, "simple_navigation_goals");
   //tell the action client that we want to spin a thread by default
-  MoveBaseClient ac("/move_base", true);
-
+  MoveBaseClient ac("move_base", true);
   //wait for the action server to come up
   while(!ac.waitForServer(ros::Duration(5.0))){
     ROS_INFO("Waiting for the move_base action server to come up");
   }
-
   move_base_msgs::MoveBaseGoal goal;
-
-  //we'll send a goal to the robot to move 1 meter forward
-  goal.target_pose.header.frame_id = "base_link";
+  //Set the desired (x,y) location in map frame and the (x,y,z,w) quat orientation
+  goal.target_pose.header.frame_id = "map";
   goal.target_pose.header.stamp = ros::Time::now();
-
-  goal.target_pose.pose.position.x = 1.0;
-  goal.target_pose.pose.orientation.w = 1.0;
+  goal.target_pose.pose.position.x = 3.0;
+  goal.target_pose.pose.position.y = -3.0;
+  goal.target_pose.pose.orientation.x = 0.0;
+  goal.target_pose.pose.orientation.y = 0.0;
+  goal.target_pose.pose.orientation.z = -0.374;
+  goal.target_pose.pose.orientation.w = -0.9271;
 
   ROS_INFO("Sending goal");
   ac.sendGoal(goal);
@@ -483,10 +467,32 @@ bool move_one(int argc, char **argv){
   ac.waitForResult();
 
   if(ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-    ROS_INFO("Hooray, the base moved 1 meter forward");
+    ROS_INFO("I made it!");
   else
-    ROS_INFO("The base failed to move forward 1 meter for some reason");
+    ROS_INFO("Something went wrong :(");
 
   return ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED;
+}
 
+void thresh_callback(int, void*){
+  Mat canny_output;
+  vector<vector<Point> > contours;
+  vector<Vec4i> hierarchy;
+
+  /// Detect edges using canny
+  Canny( src_gray, canny_output, thresh, thresh*2, 3 );
+  /// Find contours
+  findContours( canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+  /// Draw contours
+  Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+  for( int i = 0; i< contours.size(); i++ )
+     {
+       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+       drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+     }
+
+  /// Show in a window
+  namedWindow( "Contours", CV_WINDOW_AUTOSIZE );
+  imshow( "Contours", drawing );
 }
