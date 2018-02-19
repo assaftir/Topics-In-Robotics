@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
 bool dist_and_home(ros::NodeHandle n){
     float button_dist;
     button_dist = 0.0;
-    while((button_dist = distance_to_red_object(n)) <= 0)
+    while((button_dist = distance_to_red_object(n)) <= 0 || isnan(button_dist))
     	ROS_INFO("Searching for the button");
 
     cout << "The button is " << button_dist << " meters away" << endl;
@@ -311,13 +311,18 @@ void PointCloudCallbackWrapper::cloudCallback(const sensor_msgs::PointCloud2Cons
     cout << "ok up to here" << endl;
     cv::namedWindow("Src:", cv::WINDOW_AUTOSIZE);
     cv::imshow("Src:", gray_image);
+    cout << "ok up to here2" << endl;
     createTrackbar(" Canny thresh:", "Source", &thresh, max_thresh, thresh_callback);
+    cout << "ok up to here3" << endl;
     thresh_callback(0, 0);
+    cout << "ok up to here4" << endl;
     //Now contours array is filled up with contours
     //cout << contours.size() << endl;
     geometry_msgs::Point pCenter;
     pixelTo3DPoint(*msg, pCenterX, pCenterY, pCenter);
+    cout << "ok up to here5" << endl;
     cout << "dist to elevator: " << pCenter.z << endl;
+    cout << "ok up to here6" << endl;
     cv::waitKey(60);
 
     //
@@ -530,14 +535,14 @@ bool come_back_home(){
 
   return ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED;
 }
-
+//TODO: Seg fault
 void thresh_callback(int, void*){
   Mat canny_output;
   vector<Vec4i> hierarchy;
   int largest_area=0;
   int largest_contour_index=0;
   Rect bounding_rect;
-
+  
   /// Detect edges using canny
   Canny( src_gray, canny_output, thresh, thresh*2, 3 );
   /// Find contours
@@ -546,9 +551,9 @@ void thresh_callback(int, void*){
   /// Draw contours
   Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
   Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-  for( int i = 0; i< contours.size(); i++ ){
+  for( int i = 0; i < contours.size(); i++ ){
        //drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
-       double a = contourArea(contours[i],false);  //  Find the area of contour
+       double a = contourArea(contours[i], false);  //  Find the area of contour
        if(a > largest_area){
            largest_area = a;
            largest_contour_index = i;                //Store the index of largest contour
