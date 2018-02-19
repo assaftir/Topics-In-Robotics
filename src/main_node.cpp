@@ -4,6 +4,9 @@
 char* cmdvel_topic = "/mobile_base_controller/cmd_vel";
 char* odom_topic = "/mobile_base_controller/odom";
 
+float pCenterX, pCenterY;
+
+vector<vector<Point> > contours;
 Mat src; Mat src_gray;
 int thresh = 100;
 int max_thresh = 255;
@@ -53,16 +56,18 @@ int main(int argc, char **argv) {
                 break;
 	    case 5:
                 float button_dist;
+		button_dist = 0.0;
                 cout << "Driving to the elevator: " << endl;
                 if (move_to_elevator(argc, argv)){
-                    while((button_dist = get_button_distance(n)) <= 0){
+                    while((button_dist = distance_to_red_object(n)) <= 0){
                         ROS_INFO("Searching for the button");
                     }
                     cout << "The button is " << button_dist << " meters away" << endl;
                 }else{
                     cout << "Can't drive to the elevator for some reason" << endl;
                 }
-               
+                if(come_back_home())
+		    cout << "I'm at Home!" << endl;
                 break;
             case 6:
                 cout << "Min distance: " << min_laser_dist(n) << endl;
@@ -75,16 +80,29 @@ int main(int argc, char **argv) {
                 turn_around_alpha(alpha, n);
                 break;
             case 8:
-                cout << "distance?" << endl;
-                float dist_;
-                cin >> dist_;
-                cout << "Moving backwards " << dist_ << " meters." << endl;
-                driveOdom(dist_, n, -1);
+                if(dist_and_home(n))
+		    cout << "YAY!" << endl;
+		else
+		    cout << "Crap!" << endl;
                 break;
             default:
                 cout << "Wrong input, try again" << endl;
         }
     }
+}
+
+bool dist_and_home(ros::NodeHandle n){
+    float button_dist;
+    button_dist = 0.0;
+    while((button_dist = distance_to_red_object(n)) <= 0)
+    	ROS_INFO("Searching for the button");
+
+    cout << "The button is " << button_dist << " meters away" << endl;
+    if(come_back_home()){
+        cout << "I'm at Home!" << endl;
+        return true;
+    }
+    return false;
 }
 
 bool driveOdom(double distance, ros::NodeHandle n, int forward) {
@@ -290,15 +308,20 @@ void PointCloudCallbackWrapper::cloudCallback(const sensor_msgs::PointCloud2Cons
     cv::GaussianBlur(gray_image, gray_image, cv::Size(9, 9), 2, 2);
     src_gray = gray_image;
     //
-
+    cout << "ok up to here" << endl;
     cv::namedWindow("Src:", cv::WINDOW_AUTOSIZE);
     cv::imshow("Src:", gray_image);
     createTrackbar(" Canny thresh:", "Source", &thresh, max_thresh, thresh_callback);
     thresh_callback(0, 0);
+    //Now contours array is filled up with contours
+    //cout << contours.size() << endl;
+    geometry_msgs::Point pCenter;
+    pixelTo3DPoint(*msg, pCenterX, pCenterY, pCenter);
+    cout << "dist to elevator: " << pCenter.z << endl;
     cv::waitKey(60);
 
     //
-    this->red_object_distance = 2.0;
+    this->red_object_distance = pCenter.z;
     this->running = false;
 }
 
@@ -454,12 +477,46 @@ bool move_to_elevator(int argc, char **argv){
   //Set the desired (x,y) location in map frame and the (x,y,z,w) quat orientation
   goal.target_pose.header.frame_id = "map";
   goal.target_pose.header.stamp = ros::Time::now();
-  goal.target_pose.pose.position.x = 3.0;
-  goal.target_pose.pose.position.y = -3.0;
+  goal.target_pose.pose.position.x = 12.003;
+  goal.target_pose.pose.position.y = -0.826;
   goal.target_pose.pose.orientation.x = 0.0;
   goal.target_pose.pose.orientation.y = 0.0;
-  goal.target_pose.pose.orientation.z = -0.374;
-  goal.target_pose.pose.orientation.w = -0.9271;
+  goal.target_pose.pose.orientation.z = 0.541;
+  goal.target_pose.pose.orientation.w = 0.841;
+
+  ROS_INFO("Sending goal");
+  ac.sendGoal(goal);
+
+  ac.waitForResult();
+  //ROS_INFO(ac.getState());
+  if(ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
+    ROS_INFO("I made it!");
+  else
+    ROS_INFO("Something went wrong :(");
+
+  return ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED;
+}
+
+//Move using the navigation stack
+bool come_back_home(){
+
+  //ros::init(argc, argv, "simple_navigation_goals");
+  //tell the action client that we want to spin a thread by default
+  MoveBaseClient ac("move_base", true);
+  //wait for the action server to come up
+  while(!ac.waitForServer(ros::Duration(5.0))){
+    ROS_INFO("Waiting for the move_base action server to come up");
+  }
+  move_base_msgs::MoveBaseGoal goal;
+  //Set the desired (x,y) location in map frame and the (x,y,z,w) quat orientation
+  goal.target_pose.header.frame_id = "map";
+  goal.target_pose.header.stamp = ros::Time::now();
+  goal.target_pose.pose.position.x = -1.174;
+  goal.target_pose.pose.position.y = -0.700;
+  goal.target_pose.pose.orientation.x = 0.0;
+  goal.target_pose.pose.orientation.y = 0.0;
+  goal.target_pose.pose.orientation.z = 0.0;
+  goal.target_pose.pose.orientation.w = 1.0;
 
   ROS_INFO("Sending goal");
   ac.sendGoal(goal);
@@ -476,8 +533,10 @@ bool move_to_elevator(int argc, char **argv){
 
 void thresh_callback(int, void*){
   Mat canny_output;
-  vector<vector<Point> > contours;
   vector<Vec4i> hierarchy;
+  int largest_area=0;
+  int largest_contour_index=0;
+  Rect bounding_rect;
 
   /// Detect edges using canny
   Canny( src_gray, canny_output, thresh, thresh*2, 3 );
@@ -486,13 +545,26 @@ void thresh_callback(int, void*){
 
   /// Draw contours
   Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
-  for( int i = 0; i< contours.size(); i++ )
-     {
-       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-       drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
-     }
-
+  Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+  for( int i = 0; i< contours.size(); i++ ){
+       //drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+       double a = contourArea(contours[i],false);  //  Find the area of contour
+       if(a > largest_area){
+           largest_area = a;
+           largest_contour_index = i;                //Store the index of largest contour
+           bounding_rect = boundingRect(contours[i]); // Find the bounding rectangle for biggest contour     
+	}
+  }
+  for(int i = 0 ; i < contours[largest_contour_index].size() ; i++){
+	cout << contours[largest_contour_index][i] << endl;
+  }
+  pCenterX = bounding_rect.x + bounding_rect.width/2;
+  pCenterY = bounding_rect.y + bounding_rect.height/2;
+  cout << "cX: " << pCenterX << " cY:" << pCenterY << endl;
+  drawContours(drawing, contours, largest_contour_index, color, CV_FILLED, 8, hierarchy); // Draw the largest contour using previously stored index.
+  //rectangle(src, bounding_rect,  Scalar(0,255,0),1, 8,0); 
   /// Show in a window
   namedWindow( "Contours", CV_WINDOW_AUTOSIZE );
   imshow( "Contours", drawing );
+  waitKey(60);
 }

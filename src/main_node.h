@@ -81,5 +81,7 @@ float turnOdom(int clockwise, double radians, ros::NodeHandle n, bool searching_
 float getDistance(float x, float y, float z);
 float get_button_distance(ros::NodeHandle n);
 void thresh_callback(int, void*);
+bool come_back_home();
+bool dist_and_home(ros::NodeHandle n);
 
 #endif	// MAIN_NODE_H
