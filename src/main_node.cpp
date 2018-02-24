@@ -32,11 +32,11 @@ int main(int argc, char **argv) {
                         ROS_INFO("Searching for the button");
                     }
                     cout << "The button is " << button_dist << " meters away" << endl;
+		    if(come_back_home())
+		    	cout << "I'm at Home!" << endl;
                 }else{
                     cout << "Can't drive to the elevator for some reason" << endl;
                 }
-                if(come_back_home())
-		    cout << "I'm at Home!" << endl;
                 break;
 	    case 2:
                 if(dist_and_home(n))
