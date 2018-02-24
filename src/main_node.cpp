@@ -4,8 +4,8 @@
 char* cmdvel_topic = "/mobile_base_controller/cmd_vel";
 char* odom_topic = "/mobile_base_controller/odom";
 
+//GLOBAL
 float pCenterX, pCenterY;
-
 vector<vector<Point> > contours;
 Mat src; Mat src_gray;
 int thresh = 100;
@@ -23,38 +23,7 @@ int main(int argc, char **argv) {
             case -1:
                 cout << "bye bye" << endl;
                 exit(-1);
-            case 0:
-                print_options_list();
-                break;
-            case 1:
-                cout << "distance?" << endl;
-                float dist;
-                cin >> dist;
-                if (!check_for_obstacles(n, dist)) {
-                    cout << "Moving forward " << dist << " meters." << endl;
-                    driveOdom(dist, n, 1);
-                } else
-                    cout << "Obstacles, staying in place." << endl;
-                break;
-            case 2:
-                cout << "degrees?" << endl;
-                float alpha_;
-                cin >> alpha_;
-                int clockwise;
-                cout << "type 1 for clockwise, 0 for anti-clockwise" << endl;
-                cin >> clockwise;
-                cout << "Turning " << alpha_ << " degrees" << endl;
-                turnOdom(clockwise, degreesToRadians(alpha_), n, false);                              
-                break;
-            case 3:
-                cout << "Measuring distance" << endl;
-                cout << "Distance: " << distance_to_red_object(n) << endl;
-                break;
-            case 4:
-                cout << "Looking for the red object" << endl;
-                cout << "Distance: " << turnOdom(1, 2 * M_PI - 0.1, n, true) << endl;
-                break;
-	    case 5:
+	    case 1:
                 float button_dist;
 		button_dist = 0.0;
                 cout << "Driving to the elevator: " << endl;
@@ -69,22 +38,15 @@ int main(int argc, char **argv) {
                 if(come_back_home())
 		    cout << "I'm at Home!" << endl;
                 break;
-            case 6:
-                cout << "Min distance: " << min_laser_dist(n) << endl;
-                break;
-            case 7:
-                cout << "degrees?" << endl;
-                float alpha;
-                cin >> alpha;
-                cout << "Turning " << alpha << " degrees clockwise" << endl;
-                turn_around_alpha(alpha, n);
-                break;
-            case 8:
+	    case 2:
                 if(dist_and_home(n))
 		    cout << "YAY!" << endl;
 		else
 		    cout << "Crap!" << endl;
                 break;
+            case 3:
+                cout << "Min distance: " << min_laser_dist(n) << endl;
+                break;          
             default:
                 cout << "Wrong input, try again" << endl;
         }
@@ -103,121 +65,6 @@ bool dist_and_home(ros::NodeHandle n){
         return true;
     }
     return false;
-}
-
-bool driveOdom(double distance, ros::NodeHandle n, int forward) {
-    //! We will be publishing to the "cmd_vel" topic to issue commands
-    ros::Publisher cmd_vel_pub_ = n.advertise<geometry_msgs::Twist>(cmdvel_topic, 10);
-    //! We will be listening to TF transforms as well
-    tf::TransformListener listener_;
-    //wait for the listener to get the first message
-    listener_.waitForTransform("base_footprint", "odom", ros::Time(0), ros::Duration(1.0));
-    //we will record transforms here
-    tf::StampedTransform start_transform;
-    tf::StampedTransform current_transform;
-    //record the starting transform from the odometry to the base frame
-    listener_.lookupTransform("base_footprint", "odom", ros::Time(0), start_transform);
-    //we will be sending commands of type "twist"
-    geometry_msgs::Twist move_cmd;
-    //the command will be to go forward at 0.25 m/s
-    double passed = 0;
-    move_cmd.linear.y = move_cmd.angular.z = 0;
-    ros::Rate rate(10.0);
-    bool done = false;
-    while (!done && n.ok()) {
-        cout << "Passed: " << passed << endl;
-        //Update speed according to the correct distance from goal
-        move_cmd.linear.x = forward * 0.25 * move_speed_factor(abs(distance) - passed);
-        //send the drive command
-        cmd_vel_pub_.publish(move_cmd);
-        rate.sleep();
-        //get the current transform
-        try {
-            listener_.lookupTransform("base_footprint", "odom", ros::Time(0), current_transform);
-        } catch (tf::TransformException ex) {
-            ROS_ERROR("%s", ex.what());
-            break;
-        }
-        //see how far we've traveled
-        tf::Transform relative_transform = start_transform.inverse() * current_transform;
-        passed = relative_transform.getOrigin().length();
-        if (passed > abs(distance)){
-	    //Stop
-	    move_cmd.linear.x = 0;
-	    cmd_vel_pub_.publish(move_cmd);
-	    done = true;
-	}
-    }
-    cout << "done" << endl;
-    return done;
-}
-
-float turnOdom(int clockwise, double radians, ros::NodeHandle n, bool searching_red_object) {  
-    if (searching_red_object){
-    	float dist;
-    	if ((dist = distance_to_red_object(n)) != 0)
-    	    return dist;
-    }
-    while (radians < 0) radians += 2 * M_PI;
-    while (radians > 2 * M_PI) radians -= 2 * M_PI;
-    //! We will be publishing to the "cmd_vel" topic to issue commands
-    ros::Publisher cmd_vel_pub_ = n.advertise<geometry_msgs::Twist>(cmdvel_topic, 10);
-    //! We will be listening to TF transforms as well
-    tf::TransformListener listener_;
-    //wait for the listener to get the first message
-    listener_.waitForTransform("base_footprint", "odom", ros::Time(0), ros::Duration(1.0));
-    //we will record transforms here
-    tf::StampedTransform start_transform;
-    tf::StampedTransform current_transform;
-    //record the starting transform from the odometry to the base frame
-    listener_.lookupTransform("base_footprint", "odom", ros::Time(0), start_transform);
-    //we will be sending commands of type "twist"
-    geometry_msgs::Twist base_cmd;
-    //the command will be to turn at 0.75 rad/s
-    base_cmd.linear.x = base_cmd.linear.y = 0.0;
-    //the axis we want to be rotating by
-    tf::Vector3 desired_turn_axis(0, 0, 1);
-    if (!clockwise) desired_turn_axis = -desired_turn_axis;
-    //ros::Rate rate(10.0);
-    bool done = false;
-    double angle_turned = 0;
-    while (!done && n.ok()) {
-        base_cmd.angular.z = 0.2 * turn_speed_factor(angle_turned, radians);
-        if (clockwise) base_cmd.angular.z = -base_cmd.angular.z;
-        //send the drive command
-        cout << "tunred: " << angle_turned << endl;
-        cout << "factor: " << turn_speed_factor(angle_turned, radians) << endl;
-        cmd_vel_pub_.publish(base_cmd);
-       // rate.sleep();
-        //get the current transform
-        try {
-            listener_.lookupTransform("base_footprint", "odom", ros::Time(0), current_transform);
-        } catch (tf::TransformException ex) {
-            ROS_ERROR("%s", ex.what());
-            break;
-        }
-        tf::Transform relative_transform =
-                start_transform.inverse() * current_transform;
-        tf::Vector3 actual_turn_axis =
-                relative_transform.getRotation().getAxis();
-        angle_turned = relative_transform.getRotation().getAngle();
-        if (fabs(angle_turned) < 1.0e-2) continue;
-        if (actual_turn_axis.dot(desired_turn_axis) < 0)
-            angle_turned = 2 * M_PI - angle_turned;
-	if (searching_red_object){
-    		float dist;
-        	if ((dist = distance_to_red_object(n)) != 0) {
-            	    publish_move_command(cmd_vel_pub_, 0.0, 0.0);
-            	    return dist;
-		}
-	}
-        if (angle_turned > radians) done = true;
-    }
-    if (searching_red_object)
-    	cout << "Couldn't find a red object around" << endl;
-    else
-	cout << "Done spinning" << endl;
-    return 0.0;
 }
 
 float distance_to_red_object(ros::NodeHandle n) {
@@ -280,6 +127,7 @@ void OdomCallbackWrapper::odomCallback(const nav_msgs::OdometryConstPtr& msg) {
 }
 
 void PointCloudCallbackWrapper::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
+try{
     //Convert between sensor_msgs/PointCloud2 to PointXYZRGB vector
     if ((msg->width * msg->height) == 0) {
         cout << "Failed: cloud not dense" <<endl;
@@ -329,6 +177,11 @@ void PointCloudCallbackWrapper::cloudCallback(const sensor_msgs::PointCloud2Cons
     this->red_object_distance = pCenter.z;
     this->running = false;
 }
+catch(exception& e){
+    this->red_object_distance = 0;
+    this->running = false;
+}
+}
 
 void get_mat_from_pcl(cv::Mat& image, pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud){
     for( int y = 0; y < image.rows; y++ ) {
@@ -348,34 +201,6 @@ void print_options_list() {
     cout << "(4) Find red object turns around while searching for a red object. It stops after it finds a red object and returns its distance. If there is no red object, it stops after doing a full circle. " << endl;
 }
 
-/*Check for obstacles within @dist meters,
-The answer will be stored in lsaerCb object by the laser callback function*/
-bool check_for_obstacles(ros::NodeHandle n, float dist) {
-    ros::Rate r(10);
-    LaserCallbackWrapper laserCb;
-    laserCb.dist = dist;
-    ros::Subscriber scan_subscriber = n.subscribe<sensor_msgs::LaserScan>("/scan", 10, &LaserCallbackWrapper::laserCallback, &laserCb);
-    //Will be changed to false from outside, when the laser callback has finished executing
-    laserCb.laser_callback_is_active = true;
-    while (laserCb.laser_callback_is_active) {
-        ros::spinOnce();
-        r.sleep();
-    }
-    return laserCb.obstacles_in_dist;
-}
-
-float turn_speed_factor(float passed, float radians){
-    if(radians - passed > M_PI/4) return 1;
-    return ((0.8*(radians - passed)) / radians) + 0.2;
-}
-
-void publish_move_command(ros::Publisher move_pub, float x, float z) {
-    geometry_msgs::Twist move;
-    move.linear.x = x;
-    move.angular.z = z;
-    move_pub.publish(move);
-}
-
 //Let the odom callback run
 
 void wait_for_odom_data(OdomCallbackWrapper& odomCb) {
@@ -385,11 +210,6 @@ void wait_for_odom_data(OdomCallbackWrapper& odomCb) {
         ros::spinOnce();
         r.sleep();
     }
-}
-
-float move_speed_factor(float x){
-    if(x > 0.5) return 1;
-    return 0.1 + 2.8*x - 2.4*pow(x, 2);
 }
 
 void pixelTo3DPoint(const sensor_msgs::PointCloud2 pCloud, const int u, const int v, geometry_msgs::Point &p){
@@ -421,58 +241,9 @@ void pixelTo3DPoint(const sensor_msgs::PointCloud2 pCloud, const int u, const in
 
     }
 
-float get_button_distance(ros::NodeHandle n){ return 1.0; }
-
-//Turn around alpha degrees clockwise, Listen to the odometry topic to reach the desired angle.
-//Speed will be reduced as we approach the goal
-void turn_around_alpha(float alpha, ros::NodeHandle n) {
-    float radians = fmod(degreesToRadians(alpha), M_PI * 2);
-    ros::Rate r(10);
-    OdomCallbackWrapper odomCb;
-    ros::Subscriber odom_sub = n.subscribe(odom_topic, 10, &OdomCallbackWrapper::odomCallback, &odomCb);
-    ros::Publisher move_pub = n.advertise<geometry_msgs::Twist>(cmdvel_topic, 10);
-    //Wait for the first callback to executed
-    wait_for_odom_data(odomCb);
-    //Now we have the initial position in odomCb.current_pose (updated by the odom callback)
-    geometry_msgs::Pose2D init_pose(odomCb.current_pose);
-    //We are going to cross the PI point (where angle goes from -PI to +PI), so split the turn into 2 loops
-    //TODO: BETTER SOLUTION
-    float remaining_angle = radians;
-    if (init_pose.theta - radians <= -M_PI) {
-        //Turn up to -PI
-        radians = M_PI + init_pose.theta;
-        remaining_angle -= radians;
-	float passed;
-        while ((passed = abs(odomCb.current_pose.theta - init_pose.theta)) < radians) {
-	    cout << "current: " << odomCb.current_pose.theta << " init: " << init_pose.theta << endl;
-            publish_move_command(move_pub, 0.0, -0.1*turn_speed_factor(passed, radians));
-            //spin in order to update current_pose by the odomCallback
-            ros::spinOnce();
-            r.sleep();
-        }
-    }
-    //Wait for the odom callback to be executed and update the initial position
-    wait_for_odom_data(odomCb);
-    //Get new init_pose
-    init_pose.theta = odomCb.current_pose.theta;
-    //Now turn the remaining angle
-    float passed;
-    while ((passed = abs(odomCb.current_pose.theta - init_pose.theta)) < remaining_angle) {
-        cout << "current: " << odomCb.current_pose.theta << " init: " << init_pose.theta << endl;
-        publish_move_command(move_pub, 0.0, -0.1*turn_speed_factor(passed, remaining_angle));
-        //spin in order to update current_pose by the odomCallback
-        ros::spinOnce();
-        r.sleep();
-    }
-    //ROS_INFO("Turned " + alpha + " degrees clockwise\n");
-    publish_move_command(move_pub, 0.0, 0.0);
-}
-
 //Move using the navigation stack
 bool move_to_elevator(int argc, char **argv){
-
-  //ros::init(argc, argv, "simple_navigation_goals");
-  //tell the action client that we want to spin a thread by default
+  //Init client
   MoveBaseClient ac("move_base", true);
   //wait for the action server to come up
   while(!ac.waitForServer(ros::Duration(5.0))){
@@ -504,9 +275,7 @@ bool move_to_elevator(int argc, char **argv){
 
 //Move using the navigation stack
 bool come_back_home(){
-
-  //ros::init(argc, argv, "simple_navigation_goals");
-  //tell the action client that we want to spin a thread by default
+  //Init client
   MoveBaseClient ac("move_base", true);
   //wait for the action server to come up
   while(!ac.waitForServer(ros::Duration(5.0))){
@@ -537,17 +306,16 @@ bool come_back_home(){
 }
 //TODO: Seg fault
 void thresh_callback(int, void*){
+try{
   Mat canny_output;
   vector<Vec4i> hierarchy;
   int largest_area=0;
   int largest_contour_index=0;
-  Rect bounding_rect;
-  
+  Rect bounding_rect;  
   /// Detect edges using canny
   Canny( src_gray, canny_output, thresh, thresh*2, 3 );
   /// Find contours
   findContours( canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
-
   /// Draw contours
   Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
   Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
@@ -572,4 +340,6 @@ void thresh_callback(int, void*){
   namedWindow( "Contours", CV_WINDOW_AUTOSIZE );
   imshow( "Contours", drawing );
   waitKey(60);
+}
+catch(exception& e){ throw e; }
 }
