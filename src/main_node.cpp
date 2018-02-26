@@ -163,6 +163,12 @@ try{
     createTrackbar(" Canny thresh:", "Source", &thresh, max_thresh, thresh_callback);
     cout << "ok up to here3" << endl;
     thresh_callback(0, 0);
+    if(contours.size() <= 0){
+        this->red_object_distance = 0;
+        this->running = false;
+        cout << "trying again" << endl;
+        return;
+    }
     cout << "ok up to here4" << endl;
     //Now contours array is filled up with contours
     //cout << contours.size() << endl;
@@ -177,9 +183,10 @@ try{
     this->red_object_distance = pCenter.z;
     this->running = false;
 }
-catch(exception& e){
+catch(std::exception& e){
     this->red_object_distance = 0;
     this->running = false;
+    cout << e.what() << endl;
 }
 }
 
@@ -253,12 +260,12 @@ bool move_to_elevator(int argc, char **argv){
   //Set the desired (x,y) location in map frame and the (x,y,z,w) quat orientation
   goal.target_pose.header.frame_id = "map";
   goal.target_pose.header.stamp = ros::Time::now();
-  goal.target_pose.pose.position.x = 12.003;
-  goal.target_pose.pose.position.y = -0.826;
+  goal.target_pose.pose.position.x = 12.188;
+  goal.target_pose.pose.position.y = -0.654;
   goal.target_pose.pose.orientation.x = 0.0;
   goal.target_pose.pose.orientation.y = 0.0;
-  goal.target_pose.pose.orientation.z = 0.541;
-  goal.target_pose.pose.orientation.w = 0.841;
+  goal.target_pose.pose.orientation.z = 0.694;
+  goal.target_pose.pose.orientation.w = 0.720;
 
   ROS_INFO("Sending goal");
   ac.sendGoal(goal);
@@ -313,12 +320,19 @@ try{
   int largest_contour_index=0;
   Rect bounding_rect;  
   /// Detect edges using canny
+  cout << "ok up to here10" << endl;
   Canny( src_gray, canny_output, thresh, thresh*2, 3 );
+  cout << "ok up to here11" << endl;
   /// Find contours
   findContours( canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+  cout << "ok up to here12" << endl;
   /// Draw contours
   Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
   Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+  if (contours.size() <= 0){
+      cout << "No contours found, will try again" << endl;
+      return;  
+  }
   for( int i = 0; i < contours.size(); i++ ){
        //drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
        double a = contourArea(contours[i], false);  //  Find the area of contour
@@ -341,5 +355,5 @@ try{
   imshow( "Contours", drawing );
   waitKey(60);
 }
-catch(exception& e){ throw e; }
+catch(std::exception& e){ cout << e.what() << endl; throw e; }
 }
